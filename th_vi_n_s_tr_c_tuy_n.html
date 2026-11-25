@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thư Viện Số - Đọc & Quản Lý Sách PDF</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- jsPDF để tạo file PDF mẫu tự động khi khởi chạy lần đầu -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Tùy chỉnh thanh cuộn */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* Hiệu ứng bìa sách */
+        .book-cover-spine {
+            box-shadow: inset 12px 0 20px -10px rgba(0,0,0,0.4), inset -2px 0 5px rgba(255,255,255,0.3);
+        }
+        /* Ẩn thanh cuộn ngang cho danh mục trên mobile */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased selection:bg-primary-100 selection:text-primary-700">
+
+    <!-- Thanh điều hướng (Header) -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-4">
+            <!-- Logo & Tên thư viện -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-primary-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-primary-500/20">
+                    <i class="fa-solid fa-book-open-reader text-lg sm:text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-tight">Thư Viện Số</h1>
+                    <p class="text-xs text-slate-500 hidden sm:block">Lưu trữ & Đọc tài liệu PDF trực tuyến</p>
+                </div>
+            </div>
+
+            <!-- Thanh tìm kiếm (Desktop) -->
+            <div class="hidden md:flex flex-1 max-w-md mx-4">
+                <div class="relative w-full">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input type="text" id="searchInputDesktop" placeholder="Tìm theo tên sách, tác giả..." 
+                        class="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-transparent focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm transition-all outline-none">
+                </div>
+            </div>
+
+            <!-- Nút hành động -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button onclick="openUploadModal()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 active:scale-[0.98] text-white text-sm font-medium rounded-xl shadow-sm shadow-primary-600/20 transition-all cursor-pointer">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <span>Tải sách PDF lên</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Thanh tìm kiếm (Mobile) -->
+        <div class="md:hidden px-4 pb-3">
+            <div class="relative w-full">
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="text" id="searchInputMobile" placeholder="Tìm theo tên sách, tác giả..." 
+                    class="w-full pl-10 pr-4 py-2 bg-slate-100 border border-transparent focus:bg-white focus:border-primary-500 rounded-xl text-sm outline-none">
+            </div>
+        </div>
+    </header>
+
+    <!-- Nội dung chính -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        
+        <!-- Khu vực thống kê & Bộ lọc danh mục -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
+            <!-- Bộ lọc danh mục -->
+            <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1" id="categoryFilters">
+                <button data-category="Tất cả" class="category-btn active px-4 py-2 rounded-xl text-sm font-medium bg-slate-900 text-white shadow-sm transition-all whitespace-nowrap cursor-pointer">
+                    Tất cả
+                </button>
+                <button data-category="Công nghệ" class="category-btn px-4 py-2 rounded-xl text-sm font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all whitespace-nowrap cursor-pointer">
+                    Công nghệ
+                </button>
+                <button data-category="Kinh tế" class="category-btn px-4 py-2 rounded-xl text-sm font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all whitespace-nowrap cursor-pointer">
+                    Kinh tế
+                </button>
+                <button data-category="Văn học" class="category-btn px-4 py-2 rounded-xl text-sm font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all whitespace-nowrap cursor-pointer">
+                    Văn học
+                </button>
+                <button data-category="Học tập" class="category-btn px-4 py-2 rounded-xl text-sm font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all whitespace-nowrap cursor-pointer">
+                    Học tập
+                </button>
+                <button data-category="Khác" class="category-btn px-4 py-2 rounded-xl text-sm font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all whitespace-nowrap cursor-pointer">
+                    Khác
+                </button>
+            </div>
+
+            <!-- Số lượng sách hiển thị -->
+            <div class="text-sm text-slate-500 flex items-center gap-2 shrink-0">
+                <i class="fa-solid fa-layer-group text-slate-400"></i>
+                <span>Hiển thị <strong id="bookCount" class="text-slate-800">0</strong> tài liệu</span>
+            </div>
+        </div>
+
+        <!-- Trạng thái đang tải -->
+        <div id="loadingState" class="py-20 text-center">
+            <div class="inline-block w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mb-3"></div>
+            <p class="text-slate-500 text-sm">Đang tải dữ liệu từ thư viện...</p>
+        </div>
+
+        <!-- Lưới hiển thị danh sách sách -->
+        <div id="booksGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 hidden">
+            <!-- Các thẻ sách sẽ được render bằng JavaScript -->
+        </div>
+
+        <!-- Trạng thái trống (Khi chưa có sách hoặc không tìm thấy) -->
+        <div id="emptyState" class="hidden py-16 px-4 text-center bg-white rounded-2xl border border-dashed border-slate-300">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center text-2xl">
+                <i class="fa-regular fa-folder-open"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-slate-800 mb-1" id="emptyStateTitle">Thư viện chưa có sách nào</h3>
+            <p class="text-sm text-slate-500 max-w-md mx-auto mb-6" id="emptyStateDesc">
+                Hãy bắt đầu xây dựng tủ sách số của bạn bằng cách tải lên các tệp tài liệu PDF từ máy tính.
+            </p>
+            <button onclick="openUploadModal()" class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-xl transition-all cursor-pointer">
+                <i class="fa-solid fa-plus"></i>
+                <span>Tải sách đầu tiên lên</span>
+            </button>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-5 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <p>© 2026 Thư Viện Số Cá Nhân. Dữ liệu PDF được lưu trữ an toàn ngay trên trình duyệt (IndexedDB).</p>
+            <button onclick="restoreSampleBooks()" class="text-primary-600 hover:underline font-medium cursor-pointer">
+                <i class="fa-solid fa-rotate-left mr-1"></i>Khôi phục sách mẫu
+            </button>
+        </div>
+    </footer>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 1: TẢI SÁCH PDF LÊN -->
+    <!-- ===================================================================== -->
+    <div id="uploadModal" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+            <!-- Header Modal -->
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-file-pdf text-rose-500"></i>
+                    <span>Tải Sách PDF Lên Thư Viện</span>
+                </h2>
+                <button onclick="closeUploadModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Form Upload -->
+            <form id="uploadForm" class="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+                <!-- Khu vực kéo thả file PDF -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Tệp tài liệu (.PDF) <span class="text-rose-500">*</span></label>
+                    <div id="dropZone" class="border-2 border-dashed border-slate-300 hover:border-primary-500 bg-slate-50 hover:bg-primary-50/40 rounded-xl p-6 text-center transition-all cursor-pointer">
+                        <input type="file" id="pdfFileInput" accept="application/pdf,.pdf" class="hidden">
+                        <div id="dropZoneDefault">
+                            <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                            </div>
+                            <p class="text-sm font-medium text-slate-700">Kéo thả file PDF vào đây hoặc <span class="text-primary-600 underline">chọn từ máy</span></p>
+                            <p class="text-xs text-slate-400 mt-1">Hỗ trợ định dạng .PDF (Lưu trữ trực tiếp trên trình duyệt)</p>
+                        </div>
+                        <!-- Hiển thị khi đã chọn file -->
+                        <div id="dropZoneSelected" class="hidden items-center justify-between bg-white p-3 rounded-lg border border-slate-200 text-left">
+                            <div class="flex items-center gap-3 overflow-hidden">
+                                <div class="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                                    <i class="fa-solid fa-file-pdf text-lg"></i>
+                                </div>
+                                <div class="truncate">
+                                    <p id="selectedFileName" class="text-sm font-medium text-slate-800 truncate">ten-file.pdf</p>
+                                    <p id="selectedFileSize" class="text-xs text-slate-500">0 MB</p>
+                                </div>
+                            </div>
+                            <button type="button" onclick="clearSelectedFile(event)" class="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1 rounded hover:bg-rose-50 shrink-0 cursor-pointer">
+                                Đổi file
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tên sách -->
+                <div>
+                    <label for="bookTitle" class="block text-sm font-medium text-slate-700 mb-1">Tên sách / Tài liệu <span class="text-rose-500">*</span></label>
+                    <input type="text" id="bookTitle" required placeholder="Nhập tên sách..." 
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm outline-none transition-all">
+                </div>
+
+                <!-- Tác giả & Danh mục -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="bookAuthor" class="block text-sm font-medium text-slate-700 mb-1">Tác giả</label>
+                        <input type="text" id="bookAuthor" placeholder="Ví dụ: Nguyễn Nhật Ánh" 
+                            class="w-full px-3.5 py-2.5 bg-white border border-slate-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm outline-none transition-all">
+                    </div>
+                    <div>
+                        <label for="bookCategory" class="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
+                        <select id="bookCategory" class="w-full px-3.5 py-2.5 bg-white border border-slate-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm outline-none transition-all">
+                            <option value="Công nghệ">Công nghệ</option>
+                            <option value="Kinh tế">Kinh tế</option>
+                            <option value="Văn học">Văn học</option>
+                            <option value="Học tập" selected>Học tập</option>
+                            <option value="Khác">Khác</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Mô tả ngắn -->
+                <div>
+                    <label for="bookDescription" class="block text-sm font-medium text-slate-700 mb-1">Mô tả ngắn</label>
+                    <textarea id="bookDescription" rows="2" placeholder="Tóm tắt nội dung chính của cuốn sách..." 
+                        class="w-full px-3.5 py-2 bg-white border border-slate-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm outline-none transition-all resize-none"></textarea>
+                </div>
+
+                <!-- Nút Submit -->
+                <div class="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onclick="closeUploadModal()" class="px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer">
+                        Hủy bỏ
+                    </button>
+                    <button type="submit" id="submitUploadBtn" class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-xl shadow-sm transition-all cursor-pointer">
+                        <i class="fa-solid fa-check"></i>
+                        <span>Lưu vào thư viện</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 2: TRÌNH ĐỌC PDF TOÀN MÀN HÌNH -->
+    <!-- ===================================================================== -->
+    <div id="readerModal" class="fixed inset-0 z-50 hidden flex-col bg-slate-900">
+        <!-- Thanh công cụ trình đọc -->
+        <div class="h-14 sm:h-16 bg-slate-800 border-b border-slate-700 px-4 flex items-center justify-between gap-3 shrink-0">
+            <!-- Thông tin sách đang đọc -->
+            <div class="flex items-center gap-3 overflow-hidden">
+                <button onclick="closeReaderModal()" class="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Quay lại thư viện">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="truncate">
+                    <h3 id="readerTitle" class="text-sm sm:text-base font-semibold text-white truncate">Tên sách đang đọc</h3>
+                    <p id="readerMeta" class="text-xs text-slate-400 truncate">Tác giả • Danh mục</p>
+                </div>
+            </div>
+
+            <!-- Nút tiện ích trình đọc -->
+            <div class="flex items-center gap-2 shrink-0">
+                <a id="readerNewTabBtn" href="#" target="_blank" rel="noopener noreferrer" 
+                    class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs sm:text-sm font-medium rounded-lg transition-colors" title="Mở trong tab trình duyệt mới">
+                    <i class="fa-solid fa-up-right-from-square"></i>
+                    <span class="hidden sm:inline">Mở tab mới</span>
+                </a>
+                <a id="readerDownloadBtn" href="#" download="sach.pdf" 
+                    class="inline-flex items-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors" title="Tải file PDF về máy">
+                    <i class="fa-solid fa-download"></i>
+                    <span class="hidden sm:inline">Tải xuống</span>
+                </a>
+                <button onclick="closeReaderModal()" 
+                    class="w-9 h-9 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white flex items-center justify-center transition-colors ml-1 cursor-pointer" title="Đóng trình đọc">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Khung hiển thị nội dung PDF -->
+        <div class="flex-1 relative bg-slate-900 w-full h-full overflow-hidden">
+            <iframe id="pdfViewerFrame" src="" class="w-full h-full border-0" title="Trình đọc PDF"></iframe>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 3: XÁC NHẬN XÓA SÁCH (Thay thế confirm() mặc định) -->
+    <!-- ===================================================================== -->
+    <div id="deleteModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xl">
+                <i class="fa-solid fa-trash-can"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Xóa sách khỏi thư viện?</h3>
+            <p class="text-sm text-slate-500 mb-6">
+                Bạn có chắc muốn xóa cuốn <strong id="deleteBookName" class="text-slate-700">"Tên sách"</strong>? Hành động này không thể hoàn tác.
+            </p>
+            <div class="flex items-center justify-center gap-3">
+                <button onclick="closeDeleteModal()" class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors cursor-pointer">
+                    Hủy bỏ
+                </button>
+                <button id="confirmDeleteBtn" class="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-xl shadow-sm transition-colors cursor-pointer">
+                    Xóa vĩnh viễn
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- TOAST THÔNG BÁO GÓC MÀN HÌNH -->
+    <!-- ===================================================================== -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- ===================================================================== -->
+    <!-- JAVASCRIPT XỬ LÝ INDEXEDDB, UPLOAD & TRÌNH ĐỌC PDF -->
+    <!-- ===================================================================== -->
+    <script>
+        /**
+         * CẤU HÌNH CƠ SỞ DỮ LIỆU INDEXEDDB
+         * Lưu trữ cả thông tin metadata của sách và dữ liệu nhị phân (Blob) của file PDF
+         */
+        const DB_NAME = 'DigitalLibraryDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'books';
+
+        let db = null;
+        let allBooks = [];
+        let currentCategory = 'Tất cả';
+        let currentSearch = '';
+        let selectedFile = null;
+        let currentBlobUrl = null;
+        let bookToDeleteId = null;
+
+        // Bảng màu bìa sách theo danh mục
+        const CATEGORY_STYLES = {
+            'Công nghệ': {
+                gradient: 'from-blue-600 to-indigo-700',
+                badge: 'bg-blue-50 text-blue-700 border-blue-200',
+                icon: 'fa-microchip'
+            },
+            'Kinh tế': {
+                gradient: 'from-emerald-600 to-teal-700',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                icon: 'fa-chart-line'
+            },
+            'Văn học': {
+                gradient: 'from-rose-500 to-pink-700',
+                badge: 'bg-rose-50 text-rose-700 border-rose-200',
+                icon: 'fa-feather-pointed'
+            },
+            'Học tập': {
+                gradient: 'from-amber-500 to-orange-600',
+                badge: 'bg-amber-50 text-amber-700 border-amber-200',
+                icon: 'fa-graduation-cap'
+            },
+            'Khác': {
+                gradient: 'from-slate-600 to-slate-800',
+                badge: 'bg-slate-100 text-slate-700 border-slate-200',
+                icon: 'fa-book'
+            }
+        };
+
+        // Khởi tạo ứng dụng khi DOM sẵn sàng
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await initDB();
+                await checkAndSeedSampleBooks();
+                await loadBooksFromDB();
+                setupEventListeners();
+            } catch (error) {
+                console.error('Lỗi khởi tạo ứng dụng:', error);
+                showToast('Không thể khởi tạo bộ nhớ trình duyệt. Vui lòng kiểm tra chế độ ẩn danh.', 'error');
+            }
+        });
+
+        /**
+         * 1. Mở hoặc tạo mới IndexedDB
+         */
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onupgradeneeded = (event) => {
+                    const database = event.target.result;
+                    if (!database.objectStoreNames.contains(STORE_NAME)) {
+                        const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                        store.createIndex('createdAt', 'createdAt', { unique: false });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(db);
+                };
+
+                request.onerror = (event) => {
+                    reject(event.target.error);
+                };
+            });
+        }
+
+        /**
+         * 2. Tạo 2 cuốn sách PDF mẫu nếu là lần đầu mở trang
+         */
+        async function checkAndSeedSampleBooks() {
+            const initialized = localStorage.getItem('digital_library_seeded');
+            if (initialized) return;
+
+            await createSampleBooks();
+            localStorage.setItem('digital_library_seeded', 'true');
+        }
+
+        async function restoreSampleBooks() {
+            await createSampleBooks();
+            await loadBooksFromDB();
+            showToast('Đã khôi phục 2 tài liệu mẫu vào thư viện!', 'success');
+        }
+
+        async function createSampleBooks() {
+            if (!window.jspdf) return;
+            const { jsPDF } = window.jspdf;
+
+            // Sách mẫu 1: Hướng dẫn sử dụng
+            const doc1 = new jsPDF();
+            doc1.setFontSize(22);
+            doc1.text('CAM NANG SU DUNG THU VIEN SO', 20, 30);
+            doc1.setFontSize(12);
+            doc1.text('Chao mung ban den voi he thong Thu Vien So Ca Nhan!', 20, 45);
+            doc1.text('1. Tai sach len: Nhan nut "Tai sach PDF len" o goc tren ben phai.', 20, 60);
+            doc1.text('2. Luu tru ben vung: File PDF duoc luu trong IndexedDB cua trinh duyet,', 20, 70);
+            doc1.text('   giup du lieu van con nguyen khi ban tai lai trang (F5).', 20, 78);
+            doc1.text('3. Doc truc tuyen: Nhan "Doc sach" de mo trinh doc toan man hinh.', 20, 90);
+            doc1.text('4. Tim kiem & Loc: Ho tro tim theo ten sach, tac gia va danh muc.', 20, 102);
+            const blob1 = doc1.output('blob');
+
+            // Sách mẫu 2: Sổ tay công nghệ
+            const doc2 = new jsPDF();
+            doc2.setFontSize(20);
+            doc2.text('TONG QUAN KIEN TRUC WEB HIEN DAI', 20, 30);
+            doc2.setFontSize(12);
+            doc2.text('Tai lieu tom tat cac cong nghe nen tang phat trien ung dung Web:', 20, 45);
+            doc2.text('- HTML5 & Semantic Web: Cau truc noi dung chuan SEO va truy cap.', 20, 60);
+            doc2.text('- Tailwind CSS: Thiet ke giao dien dap ung (Responsive) nhanh chong.', 20, 72);
+            doc2.text('- IndexedDB API: Co so du lieu NoSQL ngay phia Client cho phep luu', 20, 84);
+            doc2.text('  tru dung luong lon cac tep tin nhi phan (Blob/File).', 20, 92);
+            const blob2 = doc2.output('blob');
+
+            const sample1 = {
+                id: 'sample-' + Date.now() + '-1',
+                title: 'Cẩm Nang Sử Dụng Thư Viện Số',
+                author: 'Ban Quản Trị Hệ Thống',
+                category: 'Học tập',
+                description: 'Tài liệu hướng dẫn nhanh các tính năng tải lên, quản lý và đọc sách PDF trực tiếp trên trình duyệt.',
+                fileName: 'cam-nang-thu-vien-so.pdf',
+                fileSize: blob1.size,
+                fileBlob: blob1,
+                createdAt: Date.now()
+            };
+
+            const sample2 = {
+                id: 'sample-' + Date.now() + '-2',
+                title: 'Tổng Quan Kiến Trúc Web & IndexedDB',
+                author: 'Nguyễn Minh Khoa',
+                category: 'Công nghệ',
+                description: 'Tìm hiểu cách lưu trữ tệp tin lớn và xây dựng ứng dụng web hoạt động mượt mà ngay trên trình duyệt.',
+                fileName: 'kien-truc-web-hien-dai.pdf',
+                fileSize: blob2.size,
+                fileBlob: blob2,
+                createdAt: Date.now() - 1000
+            };
+
+            await saveBookToDB(sample1);
+            await saveBookToDB(sample2);
+        }
+
+        /**
+         * 3. Các thao tác CRUD với IndexedDB
+         */
+        function saveBookToDB(bookObject) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.put(bookObject);
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        function loadBooksFromDB() {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([STORE_NAME], 'readonly');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.getAll();
+
+                request.onsuccess = (event) => {
+                    // Sắp xếp sách mới nhất lên đầu
+                    allBooks = (event.target.result || []).sort((a, b) => b.createdAt - a.createdAt);
+                    document.getElementById('loadingState').classList.add('hidden');
+                    renderBooks();
+                    resolve(allBooks);
+                };
+
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        function deleteBookFromDB(id) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.delete(id);
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        /**
+         * 4. Render giao diện danh sách sách
+         */
+        function renderBooks() {
+            const grid = document.getElementById('booksGrid');
+            const emptyState = document.getElementById('emptyState');
+            const bookCountEl = document.getElementById('bookCount');
+
+            // Lọc theo danh mục và từ khóa tìm kiếm
+            const filteredBooks = allBooks.filter(book => {
+                const matchCategory = currentCategory === 'Tất cả' || book.category === currentCategory;
+                const keyword = currentSearch.toLowerCase().trim();
+                const matchSearch = !keyword || 
+                    book.title.toLowerCase().includes(keyword) || 
+                    (book.author && book.author.toLowerCase().includes(keyword));
+                return matchCategory && matchSearch;
+            });
+
+            bookCountEl.textContent = filteredBooks.length;
+
+            if (filteredBooks.length === 0) {
+                grid.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                
+                if (allBooks.length > 0) {
+                    document.getElementById('emptyStateTitle').textContent = 'Không tìm thấy tài liệu phù hợp';
+                    document.getElementById('emptyStateDesc').textContent = 'Thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác để xem thêm sách.';
+                } else {
+                    document.getElementById('emptyStateTitle').textContent = 'Thư viện chưa có sách nào';
+                    document.getElementById('emptyStateDesc').textContent = 'Hãy bắt đầu xây dựng tủ sách số của bạn bằng cách tải lên các tệp tài liệu PDF từ máy tính.';
+                }
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            grid.classList.remove('hidden');
+
+            grid.innerHTML = filteredBooks.map(book => {
+                const style = CATEGORY_STYLES[book.category] || CATEGORY_STYLES['Khác'];
+                const formattedSize = formatBytes(book.fileSize);
+                const formattedDate = formatDate(book.createdAt);
+                const authorName = book.author ? escapeHTML(book.author) : 'Khuyết danh';
+                const descriptionText = book.description ? escapeHTML(book.description) : 'Chưa có mô tả cho tài liệu này.';
+
+                return `
+                <article class="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-200 flex flex-col overflow-hidden group">
+                    <!-- Phần bìa sách trực quan -->
+                    <div onclick="openReaderModal('${book.id}')" class="relative h-44 bg-gradient-to-br ${style.gradient} p-5 flex flex-col justify-between text-white cursor-pointer book-cover-spine overflow-hidden">
+                        <!-- Họa tiết trang trí nền -->
+                        <i class="fa-solid ${style.icon} absolute -right-4 -bottom-4 text-8xl text-white/10 group-hover:scale-110 transition-transform duration-300"></i>
+                        
+                        <div class="flex items-center justify-between gap-2 relative z-10">
+                            <span class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-black/25 backdrop-blur-sm text-white">
+                                PDF • ${formattedSize}
+                            </span>
+                            <span class="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-xs group-hover:bg-white group-hover:text-slate-900 transition-colors">
+                                <i class="fa-solid fa-book-open"></i>
+                            </span>
+                        </div>
+
+                        <div class="relative z-10">
+                            <h3 class="font-bold text-base sm:text-lg leading-snug line-clamp-2 drop-shadow-sm" title="${escapeHTML(book.title)}">
+                                ${escapeHTML(book.title)}
+                            </h3>
+                        </div>
+                    </div>
+
+                    <!-- Phần thông tin chi tiết -->
+                    <div class="p-5 flex-1 flex flex-col justify-between">
+                        <div>
+                            <!-- Danh mục & Ngày thêm -->
+                            <div class="flex items-center justify-between gap-2 mb-2.5">
+                                <span class="px-2.5 py-0.5 rounded-md text-xs font-medium border ${style.badge}">
+                                    ${escapeHTML(book.category)}
+                                </span>
+                                <span class="text-xs text-slate-400" title="Ngày tải lên">
+                                    <i class="fa-regular fa-calendar mr-1"></i>${formattedDate}
+                                </span>
+                            </div>
+
+                            <!-- Tác giả -->
+                            <p class="text-xs font-medium text-slate-600 mb-2 flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-pen text-slate-400"></i>
+                                <span class="truncate">${authorName}</span>
+                            </p>
+
+                            <!-- Mô tả ngắn -->
+                            <p class="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-4">
+                                ${descriptionText}
+                            </p>
+                        </div>
+
+                        <!-- Thanh nút hành động -->
+                        <div class="pt-3 border-t border-slate-100 flex items-center gap-2">
+                            <button onclick="openReaderModal('${book.id}')" class="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-primary-50 hover:bg-primary-600 text-primary-700 hover:text-white text-xs sm:text-sm font-semibold rounded-xl transition-colors cursor-pointer">
+                                <i class="fa-solid fa-glasses"></i>
+                                <span>Đọc sách</span>
+                            </button>
+                            <button onclick="openDeleteModal('${book.id}')" class="w-9 h-9 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Xóa sách này">
+                                <i class="fa-solid fa-trash-can text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+                `;
+            }).join('');
+        }
+
+        /**
+         * 5. Thiết lập sự kiện (Tìm kiếm, Bộ lọc, Kéo thả file, Form Submit)
+         */
+        function setupEventListeners() {
+            // Tìm kiếm Desktop & Mobile đồng bộ
+            const searchDesktop = document.getElementById('searchInputDesktop');
+            const searchMobile = document.getElementById('searchInputMobile');
+
+            const handleSearch = (e) => {
+                currentSearch = e.target.value;
+                searchDesktop.value = currentSearch;
+                searchMobile.value = currentSearch;
+                renderBooks();
+            };
+
+            searchDesktop.addEventListener('input', handleSearch);
+            searchMobile.addEventListener('input', handleSearch);
+
+            // Lọc danh mục
+            const categoryBtns = document.querySelectorAll('.category-btn');
+            categoryBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    categoryBtns.forEach(b => {
+                        b.classList.remove('active', 'bg-slate-900', 'text-white', 'shadow-sm');
+                        b.classList.add('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+                    });
+                    btn.classList.add('active', 'bg-slate-900', 'text-white', 'shadow-sm');
+                    btn.classList.remove('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+
+                    currentCategory = btn.dataset.category;
+                    renderBooks();
+                });
+            });
+
+            // Kéo thả & chọn file PDF
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('pdfFileInput');
+
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-primary-500', 'bg-primary-50/70');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-primary-500', 'bg-primary-50/70');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-primary-500', 'bg-primary-50/70');
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleFileSelection(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    handleFileSelection(e.target.files[0]);
+                }
+            });
+
+            // Submit Form tải sách lên
+            document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (!selectedFile) {
+                    showToast('Vui lòng chọn một tệp tin PDF trước khi lưu!', 'error');
+                    return;
+                }
+
+                const title = document.getElementById('bookTitle').value.trim();
+                const author = document.getElementById('bookAuthor').value.trim();
+                const category = document.getElementById('bookCategory').value;
+                const description = document.getElementById('bookDescription').value.trim();
+
+                if (!title) {
+                    showToast('Vui lòng nhập tên sách!', 'error');
+                    return;
+                }
+
+                const submitBtn = document.getElementById('submitUploadBtn');
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i><span>Đang lưu...</span>';
+
+                try {
+                    const newBook = {
+                        id: 'book-' + Date.now(),
+                        title: title,
+                        author: author || 'Khuyết danh',
+                        category: category,
+                        description: description,
+                        fileName: selectedFile.name,
+                        fileSize: selectedFile.size,
+                        fileBlob: selectedFile, // Lưu trực tiếp đối tượng File/Blob vào IndexedDB
+                        createdAt: Date.now()
+                    };
+
+                    await saveBookToDB(newBook);
+                    await loadBooksFromDB();
+                    closeUploadModal();
+                    showToast(`Đã thêm "${title}" vào thư viện!`, 'success');
+                } catch (err) {
+                    console.error('Lỗi lưu sách:', err);
+                    showToast('Có lỗi xảy ra khi lưu sách. Bộ nhớ trình duyệt có thể đã đầy.', 'error');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-check"></i><span>Lưu vào thư viện</span>';
+                }
+            });
+
+            // Xác nhận xóa sách
+            document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+                if (!bookToDeleteId) return;
+                try {
+                    await deleteBookFromDB(bookToDeleteId);
+                    await loadBooksFromDB();
+                    showToast('Đã xóa sách khỏi thư viện.', 'success');
+                } catch (err) {
+                    showToast('Lỗi khi xóa sách.', 'error');
+                } finally {
+                    closeDeleteModal();
+                }
+            });
+
+            // Phím ESC để đóng các Modal
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeUploadModal();
+                    closeReaderModal();
+                    closeDeleteModal();
+                }
+            });
+        }
+
+        /**
+         * Xử lý khi người dùng chọn hoặc kéo thả file PDF
+         */
+        function handleFileSelection(file) {
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                showToast('Định dạng không hợp lệ! Vui lòng chỉ chọn tệp .PDF', 'error');
+                return;
+            }
+
+            selectedFile = file;
+
+            // Cập nhật UI hiển thị file đã chọn
+            document.getElementById('dropZoneDefault').classList.add('hidden');
+            const selectedBox = document.getElementById('dropZoneSelected');
+            selectedBox.classList.remove('hidden');
+            selectedBox.classList.add('flex');
+
+            document.getElementById('selectedFileName').textContent = file.name;
+            document.getElementById('selectedFileSize').textContent = formatBytes(file.size);
+
+            // Tự động điền tên sách từ tên file nếu ô tên sách đang trống
+            const titleInput = document.getElementById('bookTitle');
+            if (!titleInput.value.trim()) {
+                const cleanName = file.name.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
+                titleInput.value = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+            }
+        }
+
+        function clearSelectedFile(event) {
+            if (event) event.stopPropagation();
+            selectedFile = null;
+            document.getElementById('pdfFileInput').value = '';
+            document.getElementById('dropZoneDefault').classList.remove('hidden');
+            const selectedBox = document.getElementById('dropZoneSelected');
+            selectedBox.classList.add('hidden');
+            selectedBox.classList.remove('flex');
+        }
+
+        /**
+         * 6. Điều khiển các Modal (Upload, Trình đọc PDF, Xác nhận xóa)
+         */
+        function openUploadModal() {
+            document.getElementById('uploadForm').reset();
+            clearSelectedFile();
+            const modal = document.getElementById('uploadModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeUploadModal() {
+            const modal = document.getElementById('uploadModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function openReaderModal(bookId) {
+            const book = allBooks.find(b => b.id === bookId);
+            if (!book || !book.fileBlob) {
+                showToast('Không tìm thấy dữ liệu tệp PDF của sách này.', 'error');
+                return;
+            }
+
+            // Giải phóng Blob URL cũ nếu có để tránh rò rỉ bộ nhớ
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+            }
+
+            // Tạo URL tạm thời từ Blob lưu trong IndexedDB
+            const pdfBlob = new Blob([book.fileBlob], { type: 'application/pdf' });
+            currentBlobUrl = URL.createObjectURL(pdfBlob);
+
+            // Cập nhật giao diện trình đọc
+            document.getElementById('readerTitle').textContent = book.title;
+            document.getElementById('readerMeta').textContent = `${book.author || 'Khuyết danh'} • ${book.category} • ${formatBytes(book.fileSize)}`;
+            
+            const iframe = document.getElementById('pdfViewerFrame');
+            iframe.src = currentBlobUrl;
+
+            const newTabBtn = document.getElementById('readerNewTabBtn');
+            newTabBtn.href = currentBlobUrl;
+
+            const downloadBtn = document.getElementById('readerDownloadBtn');
+            downloadBtn.href = currentBlobUrl;
+            downloadBtn.download = book.fileName || `${book.title}.pdf`;
+
+            const modal = document.getElementById('readerModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeReaderModal() {
+            const modal = document.getElementById('readerModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = '';
+
+            // Xóa src iframe và thu hồi Blob URL
+            document.getElementById('pdfViewerFrame').src = '';
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+                currentBlobUrl = null;
+            }
+        }
+
+        function openDeleteModal(bookId) {
+            const book = allBooks.find(b => b.id === bookId);
+            if (!book) return;
+            bookToDeleteId = bookId;
+            document.getElementById('deleteBookName').textContent = `"${book.title}"`;
+            const modal = document.getElementById('deleteModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeDeleteModal() {
+            bookToDeleteId = null;
+            const modal = document.getElementById('deleteModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        /**
+         * 7. Các hàm tiện ích hỗ trợ
+         */
+        function formatBytes(bytes, decimals = 1) {
+            if (!bytes || bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-rose-600 text-white',
+                info: 'bg-slate-800 text-white'
+            };
+            const icons = {
+                success: 'fa-circle-check',
+                error: 'fa-circle-exclamation',
+                info: 'fa-circle-info'
+            };
+
+            toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transform transition-all duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+            toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${escapeHTML(message)}</span>`;
+            
+            container.appendChild(toast);
+
+            // Hiệu ứng xuất hiện
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            // Tự động ẩn sau 3.5 giây
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
